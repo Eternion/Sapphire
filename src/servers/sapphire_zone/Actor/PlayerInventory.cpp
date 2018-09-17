@@ -1,6 +1,6 @@
 #include <Common.h>
-#include <Network/GamePacket.h>
 #include <Logging/Logger.h>
+#include <Network/CommonActorControl.h>
 
 #include "Zone/Zone.h"
 
@@ -18,6 +18,7 @@ extern Core::Framework g_framework;
 using namespace Core::Common;
 using namespace Core::Network::Packets;
 using namespace Core::Network::Packets::Server;
+using namespace Core::Network::ActorControl;
 
 Core::InventoryPtr Core::Entity::Player::getInventory() const
 {
@@ -26,7 +27,7 @@ Core::InventoryPtr Core::Entity::Player::getInventory() const
 
 void Core::Entity::Player::sendItemLevel()
 {
-   queuePacket( ActorControlPacket142( getId(), SetItemLevel, getItemLevel(), 0 ) );
+   queuePacket( boost::make_shared< ActorControlPacket142 >( getId(), SetItemLevel, getItemLevel(), 0 ) );
 }
 
 // TODO: This has to be redone and simplified
@@ -145,11 +146,11 @@ void Core::Entity::Player::addCurrency( uint8_t type, uint32_t amount )
    if( !m_pInventory->addCurrency( static_cast< Inventory::CurrencyType >( type ), amount ) )
       return;
 
-   ZoneChannelPacket< FFXIVIpcUpdateInventorySlot > invUpPacket( getId() );
-   invUpPacket.data().containerId = Inventory::InventoryType::Currency;
-   invUpPacket.data().catalogId = 1;
-   invUpPacket.data().quantity = m_pInventory->getCurrency( static_cast< Inventory::CurrencyType >( type ) );
-   invUpPacket.data().slot = static_cast< uint8_t >( type ) - 1;
+   auto invUpPacket = makeZonePacket< FFXIVIpcUpdateInventorySlot >( getId() );
+   invUpPacket->data().containerId = Inventory::InventoryType::Currency;
+   invUpPacket->data().catalogId = 1;
+   invUpPacket->data().quantity = m_pInventory->getCurrency( static_cast< Inventory::CurrencyType >( type ) );
+   invUpPacket->data().slot = static_cast< uint8_t >( type ) - 1;
 
    queuePacket( invUpPacket );
 }
@@ -159,11 +160,11 @@ void Core::Entity::Player::removeCurrency( uint8_t type, uint32_t amount )
    if( !m_pInventory->removeCurrency( static_cast< Inventory::CurrencyType >( type ), amount ) )
       return;
 
-   ZoneChannelPacket< FFXIVIpcUpdateInventorySlot > invUpPacket( getId() );
-   invUpPacket.data().containerId = Inventory::InventoryType::Currency;
-   invUpPacket.data().catalogId = 1;
-   invUpPacket.data().quantity = m_pInventory->getCurrency( static_cast< Inventory::CurrencyType >( type ) );
-   invUpPacket.data().slot = static_cast< uint8_t >( type ) - 1;
+   auto invUpPacket = makeZonePacket< FFXIVIpcUpdateInventorySlot >( getId() );
+   invUpPacket->data().containerId = Inventory::InventoryType::Currency;
+   invUpPacket->data().catalogId = 1;
+   invUpPacket->data().quantity = m_pInventory->getCurrency( static_cast< Inventory::CurrencyType >( type ) );
+   invUpPacket->data().slot = static_cast< uint8_t >( type ) - 1;
 
    queuePacket( invUpPacket );
 }
@@ -179,15 +180,16 @@ void Core::Entity::Player::addCrystal( uint8_t type, uint32_t amount )
    if( !m_pInventory->addCrystal( static_cast< Inventory::CrystalType >( type ), amount ) )
       return;
 
-   ZoneChannelPacket< FFXIVIpcUpdateInventorySlot > invUpPacket( getId() );
-   invUpPacket.data().containerId = Inventory::InventoryType::Crystal;
-   invUpPacket.data().catalogId = static_cast< uint8_t >( type ) + 1;
-   invUpPacket.data().quantity = m_pInventory->getCrystal( static_cast< Inventory::CrystalType >( type ) );
-   invUpPacket.data().slot = static_cast< uint8_t >( type ) - 1;
+   auto invUpPacket = makeZonePacket< FFXIVIpcUpdateInventorySlot >( getId() );
+   invUpPacket->data().containerId = Inventory::InventoryType::Crystal;
+   invUpPacket->data().catalogId = static_cast< uint8_t >( type ) + 1;
+   invUpPacket->data().quantity = m_pInventory->getCrystal( static_cast< Inventory::CrystalType >( type ) );
+   invUpPacket->data().slot = static_cast< uint8_t >( type ) - 1;
 
    queuePacket( invUpPacket );
 
-   queuePacket( ActorControlPacket143( getId(), ItemObtainIcon, static_cast< uint8_t >( type ) + 1, amount ) );
+   queuePacket( boost::make_shared< ActorControlPacket143 >( getId(), ItemObtainIcon,
+                                                             static_cast< uint8_t >( type ) + 1, amount ) );
 }
 
 void Core::Entity::Player::removeCrystal( uint8_t type, uint32_t amount )
@@ -195,11 +197,11 @@ void Core::Entity::Player::removeCrystal( uint8_t type, uint32_t amount )
    if( !m_pInventory->removeCrystal( static_cast< Inventory::CrystalType >( type ), amount ) )
       return;
 
-   ZoneChannelPacket< FFXIVIpcUpdateInventorySlot > invUpPacket( getId() );
-   invUpPacket.data().containerId = Inventory::InventoryType::Crystal;
-   invUpPacket.data().catalogId = static_cast< uint8_t >( type ) + 1;
-   invUpPacket.data().quantity = m_pInventory->getCrystal( static_cast< Inventory::CrystalType >( type ) );
-   invUpPacket.data().slot = static_cast< uint8_t >( type ) - 1;
+   auto invUpPacket = makeZonePacket< FFXIVIpcUpdateInventorySlot >( getId() );
+   invUpPacket->data().containerId = Inventory::InventoryType::Crystal;
+   invUpPacket->data().catalogId = static_cast< uint8_t >( type ) + 1;
+   invUpPacket->data().quantity = m_pInventory->getCrystal( static_cast< Inventory::CrystalType >( type ) );
+   invUpPacket->data().slot = static_cast< uint8_t >( type ) - 1;
 
    queuePacket( invUpPacket );
 }

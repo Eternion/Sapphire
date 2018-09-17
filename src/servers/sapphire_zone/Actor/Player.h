@@ -178,12 +178,12 @@ public:
    uint16_t getQuestUI16C( uint16_t questId );
    uint32_t getQuestUI32A( uint16_t questId );
 
-   uint8_t getQuestBitFlag8( uint16_t questId );
-   uint8_t getQuestBitFlag16( uint16_t questId );
-   uint8_t getQuestBitFlag24( uint16_t questId );
-   uint8_t getQuestBitFlag32( uint16_t questId );
-   uint8_t getQuestBitFlag40( uint16_t questId );
-   uint8_t getQuestBitFlag48( uint16_t questId );
+   bool getQuestBitFlag8( uint16_t questId, uint8_t index );
+   bool getQuestBitFlag16( uint16_t questId, uint8_t index  );
+   bool getQuestBitFlag24( uint16_t questId, uint8_t index  );
+   bool getQuestBitFlag32( uint16_t questId, uint8_t index  );
+   bool getQuestBitFlag40( uint16_t questId, uint8_t index  );
+   bool getQuestBitFlag48( uint16_t questId, uint8_t index  );
 
 
    void setQuestUI8A( uint16_t questId, uint8_t val );
@@ -209,12 +209,12 @@ public:
    void setQuestUI16C( uint16_t questId, uint16_t val );
    void setQuestUI32A( uint16_t questId, uint32_t val );
 
-   void setQuestBitFlag8( uint16_t questId, uint8_t val );
-   void setQuestBitFlag16( uint16_t questId, uint8_t val );
-   void setQuestBitFlag24( uint16_t questId, uint8_t val );
-   void setQuestBitFlag32( uint16_t questId, uint8_t val );
-   void setQuestBitFlag40( uint16_t questId, uint8_t val );
-   void setQuestBitFlag48( uint16_t questId, uint8_t val );
+   void setQuestBitFlag8( uint16_t questId, uint8_t index, bool val );
+   void setQuestBitFlag16( uint16_t questId, uint8_t index, bool val );
+   void setQuestBitFlag24( uint16_t questId, uint8_t index, bool val );
+   void setQuestBitFlag32( uint16_t questId, uint8_t index, bool val );
+   void setQuestBitFlag40( uint16_t questId, uint8_t index, bool val );
+   void setQuestBitFlag48( uint16_t questId, uint8_t index, bool val );
 
    // Inventory / Item / Currency
    //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -325,7 +325,7 @@ public:
    /*! sets players combat state */
    void setInCombat( bool mode );
    /*! return current online status depending on current state / activity */
-   Common::OnlineStatus getOnlineStatus();
+   Common::OnlineStatus getOnlineStatus() const;
    /*! sets the players zone, initiating a zoning process */
    void setZone( uint32_t zoneId );
    /*! sets the players instance & initiates zoning process */
@@ -387,6 +387,10 @@ public:
    void dismount();
    /*! get the current mount */
    uint8_t getCurrentMount() const;
+   /*! set current persistent emote */
+   void setPersistentEmote( uint32_t emoteId );
+   /*! get current persistent emote */
+   uint32_t getPersistentEmote() const;
 
    void calculateStats() override;
    void sendStats();
@@ -419,7 +423,7 @@ public:
    /*! update bitmask for how-to's seen */
    void updateHowtosSeen( uint32_t howToId );
    /*! learn an action / update the unlock bitmask. */
-   void learnAction( uint8_t actionId );
+   void learnAction( uint16_t actionId );
    /*! learn a song / update the unlock bitmask. */
    void learnSong( uint8_t songId, uint32_t itemId );
    /*! check if an action is already unlocked in the bitmask. */
@@ -495,9 +499,9 @@ public:
    /*! send a quest specific message */
    void sendQuestMessage( uint32_t questId, int8_t msgId, uint8_t type, uint32_t var1, uint32_t var2 );
    /*! queue a packet for the player */
-   void queuePacket( Network::Packets::GamePacketPtr pPacket );
+   void queuePacket( Network::Packets::FFXIVPacketBasePtr pPacket );
    /*! queue a char connection packet for the player */
-   void queueChatPacket( Network::Packets::GamePacketPtr pPacket );
+   void queueChatPacket( Network::Packets::FFXIVPacketBasePtr pPacket );
    /*! returns true if loading is complete ( 0x69 has been received ) */
    bool isLoadingComplete() const;
    /*! set the loading complete bool */
@@ -507,7 +511,9 @@ public:
    /*! return true if the player is marked for zoning */
    bool isMarkedForZoning() const;
 
-   void emote( uint32_t emoteId, uint64_t targetId );
+   void emote( uint32_t emoteId, uint64_t targetId, bool isSilent );
+   void emoteInterrupt();
+
 
    void sendZoneInPackets( uint32_t param1, uint32_t param2, uint32_t param3, uint32_t param4, bool pSetStatus );
 
@@ -551,11 +557,16 @@ public:
    bool getGmInvis() const;
    void setGmInvis( bool invis );
 
+   bool isActingAsGm() const;
+
    uint8_t getMode() const;
    void setMode( uint8_t mode );
 
    void setAutoattack( bool mode );
    bool isAutoattackOn() const;
+
+   uint8_t getPose() const;
+   void setPose( uint8_t pose );
 
    // Content Finder handling
    //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -593,6 +604,10 @@ public:
    /*! checks if a spawn index is valid */
    bool isObjSpawnIndexValid( uint8_t index );
 
+   uint64_t m_lastMoveTime;
+
+   uint8_t m_lastMoveflag;
+
 private:
    uint32_t m_lastWrite;
    uint32_t m_lastPing;
@@ -610,6 +625,8 @@ private:
    bool m_onEnterEventDone;
 
 private:
+
+
 
    Common::FFXIVARR_POSITION3 m_prevPos;
    uint32_t m_prevZoneType;
@@ -704,6 +721,8 @@ private:
    uint32_t m_cfPenaltyUntil; // unix time
 
    uint8_t m_mount;
+   uint32_t m_emoteMode;
+   uint8_t m_pose;
 
    Util::SpawnIndexAllocator< uint8_t > m_objSpawnIndexAllocator;
    Util::SpawnIndexAllocator< uint8_t > m_actorSpawnIndexAllocator;

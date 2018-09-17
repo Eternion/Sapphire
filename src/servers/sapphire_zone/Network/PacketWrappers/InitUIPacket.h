@@ -38,7 +38,7 @@ private:
       m_data.gender = player.getLookAt( Common::CharaLook::Gender );
       m_data.currentClass = static_cast< uint8_t >( player.getClass() );
       m_data.currentJob = static_cast< uint8_t >( player.getClass() );
-      m_data.currentLevel = player.getLevel();
+      m_data.maxLevel = player.getLevel();
       m_data.deity = static_cast< uint8_t >( player.getGuardianDeity() );
       m_data.namedayMonth = player.getBirthMonth();
       m_data.namedayDay = player.getBirthDay();
@@ -47,6 +47,7 @@ private:
       //m_data.gcRank = GCRank::None;
 
       m_data.homepoint = player.getHomepoint();
+      m_data.pose = player.getPose();
 
       memset( &m_data.name[0], 0, sizeof( m_data.name ) );
 
@@ -77,7 +78,7 @@ private:
 
       // df stuff
       // todo: actually do this properly
-      m_data.unknown70[4] = 1; // enable df
+//      m_data.unknown70[4] = 1; // enable df
 
       // enable all raids/guildhests/dungeons
       memset( m_data.unlockedDungeons, 0xFF, sizeof( m_data.unlockedDungeons ) );

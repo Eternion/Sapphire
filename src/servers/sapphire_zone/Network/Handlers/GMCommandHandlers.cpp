@@ -5,9 +5,10 @@
 #include <Network/GamePacketNew.h>
 #include <Logging/Logger.h>
 #include <Network/PacketContainer.h>
+#include <Network/CommonActorControl.h>
+#include <Network/PacketDef/Zone/ClientZoneDef.h>
 
 #include <unordered_map>
-#include <boost/format.hpp>
 
 #include "Network/GameConnection.h"
 
@@ -16,9 +17,7 @@
 #include "Zone/TerritoryMgr.h"
 #include "Zone/Zone.h"
 #include "Zone/InstanceContent.h"
-#include "Zone/ZonePosition.h"
 
-#include "Network/GameConnection.h"
 #include "Network/PacketWrappers/InitUIPacket.h"
 #include "Network/PacketWrappers/PingPacket.h"
 #include "Network/PacketWrappers/MoveActorPacket.h"
@@ -31,20 +30,7 @@
 #include "Network/PacketWrappers/EventFinishPacket.h"
 #include "Network/PacketWrappers/PlayerStateFlagsPacket.h"
 
-#include "DebugCommand/DebugCommandHandler.h"
-
-#include "Actor/Player.h"
-
-#include "Inventory/Inventory.h"
-
-#include "Event/EventHelper.h"
-
-#include "Action/Action.h"
-#include "Action/ActionTeleport.h"
-
-#include "Session.h"
 #include "ServerZone.h"
-#include "Forwards.h"
 #include "Framework.h"
 
 extern Core::Framework g_fw;
@@ -52,6 +38,7 @@ extern Core::Framework g_fw;
 using namespace Core::Common;
 using namespace Core::Network::Packets;
 using namespace Core::Network::Packets::Server;
+using namespace Core::Network::ActorControl;
 
 enum GmCommand
 {
@@ -100,15 +87,16 @@ enum GmCommand
    JumpNpc = 0x025F,
 };
 
-void Core::Network::GameConnection::gm1Handler( const Packets::GamePacket& inPacket, Entity::Player& player )
+void Core::Network::GameConnection::gm1Handler( const Packets::FFXIVARR_PACKET_RAW& inPacket, Entity::Player& player )
 {
    if( player.getGmRank() <= 0 )
       return;
 
-   uint32_t commandId = inPacket.getValAt< uint32_t >( 0x20 );
-   uint32_t param1 = inPacket.getValAt< uint32_t >( 0x24 );
-   uint32_t param2 = inPacket.getValAt< uint32_t >( 0x28 );
-   uint32_t param3 = inPacket.getValAt< uint32_t >( 0x38 );
+   const auto packet = ZoneChannelPacket< Client::FFXIVIpcGmCommand1 >( inPacket );
+   const auto& commandId = packet.data().commandId;
+   const auto& param1 = packet.data().param1;
+   const auto& param2 = packet.data().param2;
+   const auto& param3 = packet.data().param3;
 
    auto pLog = g_fw.get< Logger >();
    pLog->debug( player.getName() + " used GM1 commandId: " + std::to_string( commandId ) +
@@ -220,7 +208,7 @@ void Core::Network::GameConnection::gm1Handler( const Packets::GamePacket& inPac
    }
    case GmCommand::Speed:
    {
-      targetPlayer->queuePacket( ActorControlPacket143( player.getId(), Flee, param1 ) );
+      targetPlayer->queuePacket( boost::make_shared< ActorControlPacket143 >( player.getId(), Flee, param1 ) );
       player.sendNotice( "Speed for " + targetPlayer->getName() + " was set to " + std::to_string( param1 ) );
       break;
    }
@@ -247,17 +235,17 @@ void Core::Network::GameConnection::gm1Handler( const Packets::GamePacket& inPac
    {
       targetPlayer->setOnlineStatusMask( param1 );
 
-      ZoneChannelPacket< FFXIVIpcSetOnlineStatus > statusPacket( targetPlayer->getId() );
-      statusPacket.data().onlineStatusFlags = param1;
+      auto statusPacket = makeZonePacket< FFXIVIpcSetOnlineStatus >( player.getId() );
+      statusPacket->data().onlineStatusFlags = param1;
       queueOutPacket( statusPacket );
 
-      ZoneChannelPacket< FFXIVIpcSetSearchInfo > searchInfoPacket( targetPlayer->getId() );
-      searchInfoPacket.data().onlineStatusFlags = param1;
-      searchInfoPacket.data().selectRegion = targetPlayer->getSearchSelectRegion();
-      strcpy( searchInfoPacket.data().searchMessage, targetPlayer->getSearchMessage() );
+      auto searchInfoPacket = makeZonePacket< FFXIVIpcSetSearchInfo >( player.getId() );
+      searchInfoPacket->data().onlineStatusFlags = param1;
+      searchInfoPacket->data().selectRegion = targetPlayer->getSearchSelectRegion();
+      strcpy( searchInfoPacket->data().searchMessage, targetPlayer->getSearchMessage() );
       targetPlayer->queuePacket( searchInfoPacket );
 
-      targetPlayer->sendToInRangeSet( ActorControlPacket142( player.getId(), SetStatusIcon,
+      targetPlayer->sendToInRangeSet( boost::make_shared< ActorControlPacket142 >( player.getId(), SetStatusIcon,
          static_cast< uint8_t >( player.getOnlineStatus() ) ),
          true );
       player.sendNotice( "Icon for " + targetPlayer->getName() + " was set to " + std::to_string( param1 ) );
@@ -322,9 +310,11 @@ void Core::Network::GameConnection::gm1Handler( const Packets::GamePacket& inPac
    }
    case GmCommand::Item:
    {
-      if( param2 < 1 || param2 > 99 )
+      auto quantity = param2;
+
+      if( quantity < 1 || quantity > 999 )
       {
-         param2 = 1;
+         quantity = 1;
       }
 
       if( ( param1 == 0xcccccccc ) )
@@ -333,7 +323,7 @@ void Core::Network::GameConnection::gm1Handler( const Packets::GamePacket& inPac
          return;
       }
 
-      if( !targetPlayer->addItem( -1, param1, param2 ) )
+      if( !targetPlayer->addItem( -1, param1, quantity ) )
          player.sendUrgent( "Item " + std::to_string( param1 ) + " not found..." );
       break;
    }
@@ -465,12 +455,13 @@ void Core::Network::GameConnection::gm1Handler( const Packets::GamePacket& inPac
    case GmCommand::TeriInfo:
    {
       auto pCurrentZone = player.getCurrentZone();
-      player.sendNotice( "ZoneId: " + std::to_string( player.getZoneId() ) + "\nName: " +
-                         pCurrentZone->getName() + "\nInternalName: " +
-                         pCurrentZone->getInternalName() + "\nPopCount: " +
-                         std::to_string( pCurrentZone->getPopCount() ) +
-                         "\nCurrentWeather:" + std::to_string( static_cast< uint8_t >( pCurrentZone->getCurrentWeather() ) ) +
-                         "\nNextWeather:" + std::to_string( static_cast< uint8_t >( pCurrentZone->getNextWeather() ) ) );
+      player.sendNotice( "ZoneId: " + std::to_string( player.getZoneId() ) +
+                         "\nName: " + pCurrentZone->getName() +
+                         "\nInternalName: " + pCurrentZone->getInternalName() +
+                         "\nGuId: " + std::to_string( pCurrentZone->getGuId() ) +
+                         "\nPopCount: " + std::to_string( pCurrentZone->getPopCount() ) +
+                         "\nCurrentWeather: " + std::to_string( static_cast< uint8_t >( pCurrentZone->getCurrentWeather() ) ) +
+                         "\nNextWeather: " + std::to_string( static_cast< uint8_t >( pCurrentZone->getNextWeather() ) ) );
       break;
    }
    case GmCommand::Jump:
@@ -492,7 +483,7 @@ void Core::Network::GameConnection::gm1Handler( const Packets::GamePacket& inPac
 
 }
 
-void Core::Network::GameConnection::gm2Handler( const Packets::GamePacket& inPacket, Entity::Player& player )
+void Core::Network::GameConnection::gm2Handler( const Packets::FFXIVARR_PACKET_RAW& inPacket, Entity::Player& player )
 {
    if( player.getGmRank() <= 0 )
       return;
@@ -500,8 +491,10 @@ void Core::Network::GameConnection::gm2Handler( const Packets::GamePacket& inPac
    auto pLog = g_fw.get< Logger >();
    auto pServerZone = g_fw.get< ServerZone >();
 
-   uint32_t commandId = inPacket.getValAt< uint32_t >( 0x20 );
-   std::string param1 = inPacket.getStringAt( 0x34 );
+   const auto packet = ZoneChannelPacket< Client::FFXIVIpcGmCommand2 >( inPacket );
+
+   const auto& commandId = packet.data().commandId;
+   const auto& param1 = std::string( packet.data().param1 );
 
    pLog->debug( player.getName() + " used GM2 commandId: " + std::to_string( commandId ) + ", params: " + param1 );
 
@@ -537,9 +530,10 @@ void Core::Network::GameConnection::gm2Handler( const Packets::GamePacket& inPac
       targetPlayer->resetHp();
       targetPlayer->resetMp();
       targetPlayer->setStatus( Entity::Chara::ActorStatus::Idle );
+      targetPlayer->sendZoneInPackets( 0x01, 0x01, 0, 113, true );
 
-      targetPlayer->sendToInRangeSet( ActorControlPacket143( player.getId(), ZoneIn, 0x01, 0x01, 0, 113 ), true );
-      targetPlayer->sendToInRangeSet( ActorControlPacket142( player.getId(), SetStatus,
+      targetPlayer->sendToInRangeSet( boost::make_shared< ActorControlPacket143 >( player.getId(), ZoneIn, 0x01, 0x01, 0, 113 ), true );
+      targetPlayer->sendToInRangeSet( boost::make_shared< ActorControlPacket142 >( player.getId(), SetStatus,
          static_cast< uint8_t >( Entity::Chara::ActorStatus::Idle ) ), true );
       player.sendNotice( "Raised  " + targetPlayer->getName() );
       break;
@@ -557,8 +551,14 @@ void Core::Network::GameConnection::gm2Handler( const Packets::GamePacket& inPac
    }
    case GmCommand::Call:
    {
-      if( targetPlayer->getZoneId() != player.getZoneId() )
-         targetPlayer->setZone( player.getZoneId() );
+      // We shouldn't be able to call a player into an instance, only call them out of one
+      if( player.getCurrentInstance() )
+      {
+         player.sendUrgent( "You are unable to call a player while bound to a battle instance." );
+         return;
+      }
+
+      targetPlayer->setInstance( player.getCurrentZone() );
 
       targetPlayer->changePosition( player.getPos().x, player.getPos().y, player.getPos().z, player.getRot() );
       player.sendNotice( "Calling " + targetPlayer->getName() );

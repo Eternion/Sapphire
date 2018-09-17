@@ -1,12 +1,8 @@
 #include <set>
-#include <stdio.h>
-#include <time.h>
 
 #include <Common.h>
-#include <Network/GamePacket.h>
 #include <Util/Util.h>
 #include <Util/UtilMath.h>
-#include <Config/XMLConfig.h>
 #include <Logging/Logger.h>
 #include <Exd/ExdDataGenerated.h>
 #include <Network/PacketContainer.h>
@@ -19,11 +15,7 @@
 #include "Zone/TerritoryMgr.h"
 #include "Zone/Zone.h"
 
-#include "Inventory/Inventory.h"
-
-#include "Player.h"
 #include "ServerZone.h"
-#include "Forwards.h"
 #include "Framework.h"
 
 extern Core::Framework g_fw;
@@ -133,6 +125,10 @@ bool Core::Entity::Player::load( uint32_t charId, SessionPtr pSession )
    m_birthDay = res->getUInt8( "BirthDay" );
    m_birthMonth = res->getUInt8( "BirthMonth" );
    m_status = static_cast< ActorStatus >( res->getUInt( "Status" ) );
+   m_emoteMode = res->getUInt( "EmoteModeType" );
+
+   m_activeTitle = res->getUInt16( "ActiveTitle" );
+
    m_class = static_cast< ClassJob >( res->getUInt( "Class" ) );
    m_homePoint = res->getUInt8( "Homepoint" );
 
@@ -152,6 +148,10 @@ bool Core::Entity::Player::load( uint32_t charId, SessionPtr pSession )
    m_activeTitle = res->getUInt16( "ActiveTitle" );
 
    m_gmRank = res->getUInt8( "GMRank" );
+
+   m_equipDisplayFlags = res->getUInt8( "EquipDisplayFlags" );
+
+   m_pose = res->getUInt8( "Pose" );
 
    // Blobs
 
@@ -307,11 +307,11 @@ bool Core::Entity::Player::loadSearchInfo()
    if( !res->next() )
       return false;
 
-   m_searchSelectClass = res->getUInt8( 1 );
-   m_searchSelectRegion = res->getUInt8( 2 );
+   m_searchSelectClass = res->getUInt8( 2 );
+   m_searchSelectRegion = res->getUInt8( 3 );
 
    // todo: internally use an std::string instead of a char[]
-   auto searchMessage = res->getString( 3 );
+   auto searchMessage = res->getString( 4 );
    std::copy( searchMessage.begin(), searchMessage.end(), m_searchMessage );
 
    return true;
@@ -330,7 +330,7 @@ void Core::Entity::Player::updateSql()
            "ActiveTitle 36, TitleList 37, Achievement 38, Aetheryte 39, HowTo 40, Minions 41, Mounts 42, Orchestrion 43, "
            "EquippedMannequin 44, ConfigFlags 45, QuestCompleteFlags 46, OpeningSequence 47, "
            "QuestTracking 48, GrandCompany 49, GrandCompanyRank 50, Discovery 51, GMRank 52, Unlocks 53, "
-           "CFPenaltyUntil 54"*/
+           "CFPenaltyUntil 54, Pose 55"*/
    auto stmt = pDb->getPreparedStatement( Db::CharaDbStatements::CHARA_UP );
 
    stmt->setInt( 1, getHp() );
@@ -354,7 +354,7 @@ void Core::Entity::Player::updateSql()
    memcpy( modelVec.data(), m_modelEquip, sizeof( m_modelEquip ) );
    stmt->setBinary( 13, modelVec );
 
-   stmt->setInt( 14, 0 ); // EmodeModeType
+   stmt->setInt( 14, m_emoteMode ); // EmodeModeType
    stmt->setInt( 15, 0 ); // Language
 
    stmt->setInt( 16, static_cast< uint32_t >( m_bNewGame ) );
@@ -381,7 +381,7 @@ void Core::Entity::Player::updateSql()
 
    stmt->setBinary( 34, { 0, 0, 0 } ); // FavoritePoint
    stmt->setInt( 35, 0 ); // RestPoint
-   stmt->setInt( 36, 0 ); // ActiveTitle
+   stmt->setInt( 36, m_activeTitle ); // ActiveTitle
 
    std::vector< uint8_t > titleListVec( sizeof ( m_titleList ) );
    stmt->setBinary( 37, titleListVec );
@@ -432,13 +432,17 @@ void Core::Entity::Player::updateSql()
 
    stmt->setInt( 52, m_gmRank );
 
+   stmt->setInt( 53, m_equipDisplayFlags );
+
    std::vector< uint8_t > unlockVec( sizeof( m_unlocks ) );
    memcpy( unlockVec.data(), m_unlocks, sizeof( m_unlocks ) );
-   stmt->setBinary( 53, unlockVec );
+   stmt->setBinary( 54, unlockVec );
 
-   stmt->setInt( 54, m_cfPenaltyUntil );
+   stmt->setInt( 55, m_cfPenaltyUntil );
 
-   stmt->setInt( 55, m_id );
+   stmt->setInt( 56, m_pose );
+
+   stmt->setInt( 57, m_id );
 
    pDb->execute( stmt );
 
@@ -492,7 +496,7 @@ void Core::Entity::Player::updateDbSearchInfo() const
    stmtS1->setInt( 2, m_id );
    pDb->execute( stmtS1 );
 
-   auto stmtS2 = pDb->getPreparedStatement( Db::CHARA_SEARCHINFO_UP_SELECTREGION );
+   auto stmtS2 = pDb->getPreparedStatement( Db::CHARA_SEARCHINFO_UP_SEARCHCOMMENT );
    stmtS2->setString( 1, string( m_searchMessage != nullptr ? m_searchMessage : "" ) );
    stmtS2->setInt( 2, m_id );
    pDb->execute( stmtS2 );

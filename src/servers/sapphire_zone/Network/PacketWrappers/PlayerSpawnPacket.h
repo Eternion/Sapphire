@@ -19,11 +19,12 @@ namespace Server {
    * @brief The packet sent to spawn a player.
    */
    class PlayerSpawnPacket :
-      public GamePacketNew< FFXIVIpcPlayerSpawn, ServerZoneIpcType >
+      public ZoneChannelPacket< FFXIVIpcPlayerSpawn >
+
    {
    public:
       PlayerSpawnPacket( Entity::Player& player, Entity::Player& target ) :
-         GamePacketNew< FFXIVIpcPlayerSpawn, ServerZoneIpcType >( player.getId(), target.getId() )
+         ZoneChannelPacket< FFXIVIpcPlayerSpawn >( player.getId(), target.getId() )
       {
          initialize( player, target );
       };
@@ -45,7 +46,7 @@ namespace Server {
          //m_data.tPMax = 3000;
          m_data.level = player.getLevel();
          m_data.gmRank = player.getGmRank();
-         m_data.pose = 0;
+         m_data.pose = player.getPose();
 
          memcpy( m_data.look, player.getLookArray(), 26 );
 
@@ -111,7 +112,13 @@ namespace Server {
             m_data.displayFlags |= Entity::Chara::DisplayFlags::Visor;
          }
 
+         if( !( player.getEquipDisplayFlags() & Core::Common::EquipDisplayFlags::HideLegacyMark ) )
+         {
+            m_data.look[0xC] = m_data.look[0xC] |  1 << 7;
+         }
+
          m_data.currentMount = player.getCurrentMount();
+         m_data.persistentEmote = player.getPersistentEmote();
 
          m_data.targetId = player.getTargetId();
          //m_data.type = 1;

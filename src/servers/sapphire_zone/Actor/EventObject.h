@@ -10,10 +10,11 @@ namespace Entity
    class EventObject : public Actor
    {
    public:
-      EventObject( uint32_t actorId, uint32_t objectId, uint32_t gimmickId, uint8_t initialState, Common::FFXIVARR_POSITION3 pos,
-                   float rotation, const std::string& givenName = "none" );
+      EventObject( uint32_t actorId, uint32_t objectId, uint32_t gimmickId, uint8_t initialState,
+                   Common::FFXIVARR_POSITION3 pos, float rotation, const std::string& givenName = "none" );
 
-      using OnTalkEventHandler = std::function< void( Entity::Player&, Entity::EventObjectPtr, InstanceContentPtr, uint64_t ) >;
+      using OnTalkEventHandler = std::function< void( Entity::Player&, Entity::EventObjectPtr,
+                                                      InstanceContentPtr, uint64_t ) >;
 
       uint32_t getGimmickId() const;
       void setGimmickId( uint32_t gimmickId );
@@ -37,6 +38,8 @@ namespace Entity
       void spawn( PlayerPtr pTarget ) override;
       void despawn( PlayerPtr pTarget ) override;
 
+      void setAnimationFlag( uint32_t flag, uint32_t animationFlag );
+
    protected:
       uint32_t m_gimmickId;
       uint32_t m_objectId;
@@ -45,6 +48,8 @@ namespace Entity
       std::string m_name;
       InstanceContentPtr m_parentInstance;
       OnTalkEventHandler m_onTalkEventHandler;
+
+
    };
 }
 }

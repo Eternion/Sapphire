@@ -1,6 +1,5 @@
 #include <Common.h>
 #include <Network/PacketDef/Zone/ServerZoneDef.h>
-#include <Network/GamePacket.h>
 #include <Exd/ExdDataGenerated.h>
 #include <Network/PacketContainer.h>
 
@@ -8,8 +7,6 @@
 #include "Network/PacketWrappers/QuestMessagePacket.h"
 
 #include "Session.h"
-#include "Inventory/Inventory.h"
-#include "Player.h"
 #include "Framework.h"
 
 extern Core::Framework g_fw;
@@ -44,16 +41,16 @@ void Core::Entity::Player::removeQuest( uint16_t questId )
    if( ( idx != -1 ) && ( m_activeQuests[idx] != nullptr ) )
    {
 
-      ZoneChannelPacket< FFXIVIpcQuestUpdate > questUpdatePacket( getId() );
-      questUpdatePacket.data().slot = static_cast< uint8_t >( idx );
-      questUpdatePacket.data().questInfo.c.questId = 0;
-      questUpdatePacket.data().questInfo.c.sequence = 0xFF;
+      auto questUpdatePacket = makeZonePacket< FFXIVIpcQuestUpdate >( getId() );
+      questUpdatePacket->data().slot = static_cast< uint8_t >( idx );
+      questUpdatePacket->data().questInfo.c.questId = 0;
+      questUpdatePacket->data().questInfo.c.sequence = 0xFF;
       queuePacket( questUpdatePacket );
 
-      ZoneChannelPacket< FFXIVIpcQuestFinish > questFinishPacket( getId() );
-      questFinishPacket.data().questId = questId;
-      questFinishPacket.data().flag1 = 1;
-      questFinishPacket.data().flag2 = 1;
+      auto questFinishPacket = makeZonePacket< FFXIVIpcQuestFinish >( getId() );
+      questFinishPacket->data().questId = questId;
+      questFinishPacket->data().flag1 = 1;
+      questFinishPacket->data().flag2 = 1;
       queuePacket( questFinishPacket );
 
       for( int32_t ii = 0; ii < 5; ii++ )
@@ -89,82 +86,82 @@ int8_t Core::Entity::Player::getQuestIndex( uint16_t questId )
    return -1;
 }
 
-uint8_t Core::Entity::Player::getQuestBitFlag8( uint16_t questId )
+bool Core::Entity::Player::getQuestBitFlag8( uint16_t questId, uint8_t index )
 {
    int8_t idx = getQuestIndex( questId );
    uint8_t value = 0;
    if( idx != -1 )
    {
       boost::shared_ptr< QuestActive > pNewQuest = m_activeQuests[idx];
-      value = pNewQuest->a.BitFlag8;
+      return pNewQuest->a.BitFlag8 & ( 1 << index );
    }
 
-   return value;
+   return false;
 }
 
-uint8_t Core::Entity::Player::getQuestBitFlag16( uint16_t questId )
+bool Core::Entity::Player::getQuestBitFlag16( uint16_t questId, uint8_t index )
 {
    int8_t idx = getQuestIndex( questId );
    uint8_t value = 0;
    if( idx != -1 )
    {
       boost::shared_ptr< QuestActive > pNewQuest = m_activeQuests[idx];
-      value = pNewQuest->a.BitFlag16;
+      return pNewQuest->a.BitFlag16 & ( 1 << index );
    }
 
-   return value;
+   return false;
 }
 
-uint8_t Core::Entity::Player::getQuestBitFlag24( uint16_t questId )
+bool Core::Entity::Player::getQuestBitFlag24( uint16_t questId, uint8_t index )
 {
    int8_t idx = getQuestIndex( questId );
    uint8_t value = 0;
    if( idx != -1 )
    {
       boost::shared_ptr< QuestActive > pNewQuest = m_activeQuests[idx];
-      value = pNewQuest->a.BitFlag24;
+      return pNewQuest->a.BitFlag24 & ( 1 << index );
    }
 
-   return value;
+   return false;
 }
 
-uint8_t Core::Entity::Player::getQuestBitFlag32( uint16_t questId )
+bool Core::Entity::Player::getQuestBitFlag32( uint16_t questId, uint8_t index )
 {
    int8_t idx = getQuestIndex( questId );
    uint8_t value = 0;
    if( idx != -1 )
    {
       boost::shared_ptr< QuestActive > pNewQuest = m_activeQuests[idx];
-      value = pNewQuest->a.BitFlag32;
+      return pNewQuest->a.BitFlag32 & ( 1 << index );
    }
 
-   return value;
+   return false;
 }
 
-uint8_t Core::Entity::Player::getQuestBitFlag40( uint16_t questId )
+bool Core::Entity::Player::getQuestBitFlag40( uint16_t questId, uint8_t index )
 {
    int8_t idx = getQuestIndex( questId );
    uint8_t value = 0;
    if( idx != -1 )
    {
       boost::shared_ptr< QuestActive > pNewQuest = m_activeQuests[idx];
-      value = pNewQuest->a.BitFlag40;
+      return pNewQuest->a.BitFlag40 & ( 1 << index );
    }
 
-   return value;
+   return false;
 }
 
-uint8_t Core::Entity::Player::getQuestBitFlag48( uint16_t questId )
+bool Core::Entity::Player::getQuestBitFlag48( uint16_t questId, uint8_t index )
 {
    int8_t idx = getQuestIndex( questId );
    uint8_t value = 0;
    if( idx != -1 )
    {
       boost::shared_ptr< QuestActive > pNewQuest = m_activeQuests[idx];
-      value = pNewQuest->a.BitFlag48;
+      return pNewQuest->a.BitFlag48 & ( 1 << index );
    }
 
-   return value;
+   return false;
 }
 
 uint8_t Core::Entity::Player::getQuestUI8A( uint16_t questId )
@@ -762,7 +759,7 @@ void Core::Entity::Player::setQuestUI32A( uint16_t questId, uint32_t val )
    }
 }
 
-void Core::Entity::Player::setQuestBitFlag8( uint16_t questId, uint8_t val )
+void Core::Entity::Player::setQuestBitFlag8( uint16_t questId, uint8_t index, bool val )
 {
    int8_t idx = getQuestIndex( questId );
 
@@ -770,13 +767,16 @@ void Core::Entity::Player::setQuestBitFlag8( uint16_t questId, uint8_t val )
    {
       boost::shared_ptr< QuestActive > pNewQuest = m_activeQuests[idx];
 
-      pNewQuest->a.BitFlag8 = val;
+      if( val )
+         pNewQuest->a.BitFlag8 |= ( 1 << index );
+      else
+         pNewQuest->a.BitFlag8 &= ~( 1 << index );
 
       updateQuest( questId, pNewQuest->c.sequence );
    }
 }
 
-void Core::Entity::Player::setQuestBitFlag16( uint16_t questId, uint8_t val )
+void Core::Entity::Player::setQuestBitFlag16( uint16_t questId, uint8_t index, bool val )
 {
    int8_t idx = getQuestIndex( questId );
 
@@ -784,13 +784,16 @@ void Core::Entity::Player::setQuestBitFlag16( uint16_t questId, uint8_t val )
    {
       boost::shared_ptr< QuestActive > pNewQuest = m_activeQuests[idx];
 
-      pNewQuest->a.BitFlag16 = val;
+      if( val )
+         pNewQuest->a.BitFlag16 |= ( 1 << index );
+      else
+         pNewQuest->a.BitFlag16 &= ~( 1 << index );
 
       updateQuest( questId, pNewQuest->c.sequence );
    }
 }
 
-void Core::Entity::Player::setQuestBitFlag24( uint16_t questId, uint8_t val )
+void Core::Entity::Player::setQuestBitFlag24( uint16_t questId, uint8_t index, bool val )
 {
    int8_t idx = getQuestIndex( questId );
 
@@ -798,12 +801,16 @@ void Core::Entity::Player::setQuestBitFlag24( uint16_t questId, uint8_t val )
    {
       boost::shared_ptr< QuestActive > pNewQuest = m_activeQuests[idx];
 
-      pNewQuest->a.BitFlag24 = val;
+      if( val )
+         pNewQuest->a.BitFlag24 |= ( 1 << index );
+      else
+         pNewQuest->a.BitFlag24 &= ~( 1 << index );
 
       updateQuest( questId, pNewQuest->c.sequence );
    }
 }
-void Core::Entity::Player::setQuestBitFlag32( uint16_t questId, uint8_t val )
+
+void Core::Entity::Player::setQuestBitFlag32( uint16_t questId, uint8_t index, bool val )
 {
    int8_t idx = getQuestIndex( questId );
 
@@ -811,13 +818,16 @@ void Core::Entity::Player::setQuestBitFlag32( uint16_t questId, uint8_t val )
    {
       boost::shared_ptr< QuestActive > pNewQuest = m_activeQuests[idx];
 
-      pNewQuest->a.BitFlag32 = val;
+      if( val )
+         pNewQuest->a.BitFlag32 |= ( 1 << index );
+      else
+         pNewQuest->a.BitFlag32 &= ~( 1 << index );
 
       updateQuest( questId, pNewQuest->c.sequence );
    }
 }
 
-void Core::Entity::Player::setQuestBitFlag40( uint16_t questId, uint8_t val )
+void Core::Entity::Player::setQuestBitFlag40( uint16_t questId, uint8_t index, bool val )
 {
    int8_t idx = getQuestIndex( questId );
 
@@ -825,13 +835,16 @@ void Core::Entity::Player::setQuestBitFlag40( uint16_t questId, uint8_t val )
    {
       boost::shared_ptr< QuestActive > pNewQuest = m_activeQuests[idx];
 
-      pNewQuest->a.BitFlag40 = val;
+      if( val )
+         pNewQuest->a.BitFlag40 |= ( 1 << index );
+      else
+         pNewQuest->a.BitFlag40 &= ~( 1 << index );
 
       updateQuest( questId, pNewQuest->c.sequence );
    }
 }
 
-void Core::Entity::Player::setQuestBitFlag48( uint16_t questId, uint8_t val )
+void Core::Entity::Player::setQuestBitFlag48( uint16_t questId, uint8_t index, bool val )
 {
    int8_t idx = getQuestIndex( questId );
 
@@ -839,12 +852,14 @@ void Core::Entity::Player::setQuestBitFlag48( uint16_t questId, uint8_t val )
    {
       boost::shared_ptr< QuestActive > pNewQuest = m_activeQuests[idx];
 
-      pNewQuest->a.BitFlag48 = val;
+      if( val )
+         pNewQuest->a.BitFlag48 |= ( 1 << index );
+      else
+         pNewQuest->a.BitFlag48 &= ~( 1 << index );
 
       updateQuest( questId, pNewQuest->c.sequence );
    }
 }
-
 
 
 uint8_t Core::Entity::Player::getQuestSeq( uint16_t questId )
@@ -865,11 +880,12 @@ void Core::Entity::Player::updateQuest( uint16_t questId, uint8_t sequence )
    {
       uint8_t index = getQuestIndex( questId );
       auto pNewQuest = m_activeQuests[index];
-      ZoneChannelPacket< FFXIVIpcQuestUpdate > pe_qa( getId() );
+
+      auto questUpdatePacket = makeZonePacket< FFXIVIpcQuestUpdate >( getId() );
       pNewQuest->c.sequence = sequence;
-      pe_qa.data().slot = index;
-      pe_qa.data().questInfo = *pNewQuest;
-      queuePacket( pe_qa );
+      questUpdatePacket->data().slot = index;
+      questUpdatePacket->data().questInfo = *pNewQuest;
+      queuePacket( questUpdatePacket );
 
    }
    else
@@ -895,10 +911,10 @@ void Core::Entity::Player::updateQuest( uint16_t questId, uint8_t sequence )
       m_questIdToQuestIdx[questId] = idx;
       m_questIdxToQuestId[idx] = questId;
 
-      ZoneChannelPacket< FFXIVIpcQuestUpdate > pe_qa( getId() );
-      pe_qa.data().slot = idx;
-      pe_qa.data().questInfo = *pNewQuest;
-      queuePacket( pe_qa );
+      auto questUpdatePacket = makeZonePacket< FFXIVIpcQuestUpdate >( getId() );
+      questUpdatePacket->data().slot = idx;
+      questUpdatePacket->data().questInfo = *pNewQuest;
+      queuePacket( questUpdatePacket );
 
       for( int32_t ii = 0; ii < 5; ii++ )
       {
@@ -917,14 +933,14 @@ void Core::Entity::Player::updateQuest( uint16_t questId, uint8_t sequence )
 
 void Core::Entity::Player::sendQuestTracker()
 {
-   ZoneChannelPacket< FFXIVIpcQuestTracker > trackerPacket( getId() );
+   auto trackerPacket = makeZonePacket< FFXIVIpcQuestTracker >( getId() );
 
    for( int32_t ii = 0; ii < 5; ii++ )
    {
       if( m_questTracking[ii] >= 0 )
       {
-         trackerPacket.data().entry[ii].active = 1;
-         trackerPacket.data().entry[ii].questIndex = static_cast< uint8_t >( m_questTracking[ii] );
+         trackerPacket->data().entry[ii].active = 1;
+         trackerPacket->data().entry[ii].questIndex = static_cast< uint8_t >( m_questTracking[ii] );
       }
    }
    queuePacket( trackerPacket );
@@ -962,7 +978,7 @@ void Core::Entity::Player::setQuestTracker( uint16_t index, int16_t flag )
 
 void Core::Entity::Player::sendQuestInfo()
 {
-   ZoneChannelPacket< FFXIVIpcQuestActiveList > pe_qa( getId() );
+   auto activeQuestListPacket = makeZonePacket< FFXIVIpcQuestActiveList >( getId() );
 
    for( int32_t i = 0; i < 30; i++ )
    {
@@ -970,24 +986,24 @@ void Core::Entity::Player::sendQuestInfo()
       if( m_activeQuests[i] != nullptr )
       {
 
-         auto& quest = pe_qa.data().activeQuests[i];
+         auto& quest = activeQuestListPacket->data().activeQuests[i];
          quest = *m_activeQuests[i];
 
       }
    }
 
-   queuePacket( pe_qa );
+   queuePacket( activeQuestListPacket );
 
-   ZoneChannelPacket< FFXIVIpcQuestCompleteList > pe_qc( getId() );
-   memcpy( pe_qc.data().questCompleteMask, m_questCompleteFlags, sizeof( m_questCompleteFlags ) );
-   queuePacket( pe_qc );
+   auto completeQuestListPacket = makeZonePacket< FFXIVIpcQuestCompleteList >( getId() );
+   memcpy( completeQuestListPacket->data().questCompleteMask, m_questCompleteFlags, sizeof( m_questCompleteFlags ) );
+   queuePacket( completeQuestListPacket );
 
    sendQuestTracker();
 }
 
 void Core::Entity::Player::sendQuestMessage( uint32_t questId, int8_t msgId, uint8_t type, uint32_t var1, uint32_t var2 )
 {
-   queuePacket( QuestMessagePacket( getAsPlayer(), questId, msgId, type, var1, var2 ) );
+   queuePacket( boost::make_shared< QuestMessagePacket >( getAsPlayer(), questId, msgId, type, var1, var2 ) );
 }
 
 
@@ -1017,7 +1033,7 @@ bool Core::Entity::Player::giveQuestRewards( uint32_t questId, uint32_t optional
    auto pExdData = g_fw.get< Data::ExdDataGenerated >();
    uint32_t playerLevel = getLevel();
    auto questInfo = pExdData->get< Core::Data::Quest >( questId );
-   
+
 
    if( !questInfo )
       return false;
@@ -1052,14 +1068,14 @@ bool Core::Entity::Player::giveQuestRewards( uint32_t questId, uint32_t optional
       auto itemId = questInfo->itemReward1.at( optionalChoice );
       addItem( -1, itemId, questInfo->itemCountReward1.at( optionalChoice ) );
    }
-   
+
    if( gilReward > 0 )
       addCurrency( 1, gilReward );
 
    return true;
 }
 
-boost::shared_ptr<QuestActive> Core::Entity::Player::getQuestActive( uint16_t index )
+boost::shared_ptr< QuestActive > Core::Entity::Player::getQuestActive( uint16_t index )
 {
    return m_activeQuests[index];
 }

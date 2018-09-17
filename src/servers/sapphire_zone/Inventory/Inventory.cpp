@@ -2,7 +2,7 @@
 #include <boost/algorithm/clamp.hpp>
 
 #include <Network/PacketDef/Zone/ServerZoneDef.h>
-#include <Common.h>
+
 #include <Exd/ExdDataGenerated.h>
 #include <Logging/Logger.h>
 #include <Database/DatabaseDef.h>
@@ -12,11 +12,10 @@
 #include "Network/PacketWrappers/ServerNoticePacket.h"
 #include "Network/PacketWrappers/ActorControlPacket143.h"
 
-#include "Forwards.h"
-#include "Inventory.h"
 #include "ItemContainer.h"
 #include "Item.h"
 #include "Framework.h"
+#include <Network/CommonActorControl.h>
 
 extern Core::Framework g_fw;
 
@@ -24,6 +23,7 @@ using namespace Core::Common;
 using namespace Core::Network;
 using namespace Core::Network::Packets;
 using namespace Core::Network::Packets::Server;
+using namespace Core::Network::ActorControl;
 
 Core::Inventory::Inventory( Core::Entity::Player* pOwner )
 {
@@ -130,13 +130,16 @@ Core::ItemPtr Core::Inventory::getItemAt( uint16_t containerId, uint8_t slotId )
    return m_inventoryMap[containerId]->getItem( slotId );
 }
 
-Core::ItemPtr Core::Inventory::createItem( uint32_t catalogId, uint8_t quantity )
+Core::ItemPtr Core::Inventory::createItem( uint32_t catalogId, uint16_t quantity )
 {
    auto pExdData = g_fw.get< Data::ExdDataGenerated >();
    auto pDb = g_fw.get< Db::DbWorkerPool< Db::CharaDbConnection > >();
    auto itemInfo = pExdData->get< Core::Data::Item >( catalogId );
 
-   uint8_t itemAmount = quantity;
+   if( !itemInfo )
+      return nullptr;
+
+   uint16_t itemAmount = quantity;
 
    if( itemInfo->stackSize == 1 )
       itemAmount = 1;
@@ -146,16 +149,14 @@ Core::ItemPtr Core::Inventory::createItem( uint32_t catalogId, uint8_t quantity 
 
    uint8_t flags = 0;
 
-   std::string itemName( itemInfo->name );
-
-   ItemPtr pItem( new Item( catalogId ) );
+   ItemPtr pItem = make_Item( getNextUId(),
+                              catalogId,
+                              itemInfo->modelMain,
+                              itemInfo->modelSub );
 
    pItem->setStackSize( itemAmount );
-   pItem->setUId( getNextUId() );
-   pItem->setModelIds( itemInfo->modelMain, itemInfo->modelSub );
-   pItem->setCategory( static_cast< ItemUICategory >( itemInfo->itemUICategory ) );
 
-  pDb->execute( "INSERT INTO charaglobalitem ( CharacterId, itemId, catalogId, stack, flags ) VALUES ( " +
+   pDb->execute( "INSERT INTO charaglobalitem ( CharacterId, itemId, catalogId, stack, flags ) VALUES ( " +
                       std::to_string( m_pOwner->getId() ) + ", " +
                       std::to_string( pItem->getUId() ) + ", " +
                       std::to_string( pItem->getId() ) + ", " +
@@ -163,7 +164,6 @@ Core::ItemPtr Core::Inventory::createItem( uint32_t catalogId, uint8_t quantity 
                       std::to_string( flags ) + ");" );
 
    return pItem;
-
 }
 
 
@@ -313,7 +313,7 @@ void Core::Inventory::updateBagDb( InventoryType type )
 
 bool Core::Inventory::isArmory( uint16_t containerId )
 {
-   return 
+   return
       containerId == ArmoryBody ||
       containerId == ArmoryEar ||
       containerId == ArmoryFeet ||
@@ -406,6 +406,12 @@ void Core::Inventory::updateItemDb( Core::ItemPtr pItem ) const
                      " WHERE itemId = " + std::to_string( pItem->getUId() ) );
 }
 
+void Core::Inventory::deleteItemDb( Core::ItemPtr item ) const
+{
+   auto pDb = g_fw.get< Db::DbWorkerPool< Db::CharaDbConnection > >();
+   pDb->execute( "UPDATE charaglobalitem SET IS_DELETE = 1 WHERE itemId = " + std::to_string( item->getUId() ) );
+}
+
 bool Core::Inventory::removeCurrency( CurrencyType type, uint32_t amount )
 {
 
@@ -470,12 +476,12 @@ bool Core::Inventory::isOneHandedWeapon( ItemUICategory weaponCategory )
 
 bool Core::Inventory::isObtainable( uint32_t catalogId, uint8_t quantity )
 {
-   
+
    return true;
 }
 
 
-int16_t Core::Inventory::addItem( uint16_t inventoryId, int8_t slotId, uint32_t catalogId, uint8_t quantity )
+int16_t Core::Inventory::addItem( uint16_t inventoryId, int8_t slotId, uint32_t catalogId, uint16_t quantity, bool isHq, bool silent )
 {
    auto pDb = g_fw.get< Db::DbWorkerPool< Db::CharaDbConnection > >();
    auto pExdData = g_fw.get< Data::ExdDataGenerated >();
@@ -506,7 +512,9 @@ int16_t Core::Inventory::addItem( uint16_t inventoryId, int8_t slotId, uint32_t 
    }
 
    auto item = createItem( catalogId, quantity );
-   
+
+   item->setHq( isHq );
+
    if( rSlotId != -1 )
    {
 
@@ -516,16 +524,19 @@ int16_t Core::Inventory::addItem( uint16_t inventoryId, int8_t slotId, uint32_t 
                          " WHERE storageId = " + std::to_string( inventoryId ) +
                          " AND CharacterId = " + std::to_string( m_pOwner->getId() ) );
 
-      ZoneChannelPacket< FFXIVIpcUpdateInventorySlot > invUpPacket( m_pOwner->getId() );
-      invUpPacket.data().containerId = inventoryId;
-      invUpPacket.data().catalogId = catalogId;
-      invUpPacket.data().quantity = item->getStackSize();
-      invUpPacket.data().hqFlag = item->isHq() ? 1 : 0;
-      invUpPacket.data().slot = rSlotId;
-      invUpPacket.data().condition = 30000;
+
+      auto invUpPacket = makeZonePacket< FFXIVIpcUpdateInventorySlot >( m_pOwner->getId() );
+      invUpPacket->data().containerId = inventoryId;
+      invUpPacket->data().catalogId = catalogId;
+      invUpPacket->data().quantity = item->getStackSize();
+      invUpPacket->data().hqFlag = item->isHq() ? 1 : 0;
+      invUpPacket->data().slot = rSlotId;
+      invUpPacket->data().condition = 30000;
       m_pOwner->queuePacket( invUpPacket );
 
-      m_pOwner->queuePacket( ActorControlPacket143( m_pOwner->getId(), ItemObtainIcon, catalogId, item->getStackSize() ) );
+      if( !silent )
+         m_pOwner->queuePacket( boost::make_shared< ActorControlPacket143 >( m_pOwner->getId(), ItemObtainIcon,
+                                                                             catalogId, item->getStackSize() ) );
 
    }
 
@@ -600,6 +611,71 @@ bool Core::Inventory::updateContainer( uint16_t containerId, uint8_t slotId, Ite
    return true;
 }
 
+void Core::Inventory::splitItem( uint16_t fromInventoryId, uint8_t fromSlotId, uint16_t toInventoryId, uint8_t toSlot, uint16_t itemCount )
+{
+   auto fromItem = m_inventoryMap[fromInventoryId]->getItem( fromSlotId );
+   if( !fromItem )
+      return;
+
+   // check we have enough items in the origin slot
+   // nb: don't let the client 'split' a whole stack into another slot
+   if( fromItem->getStackSize() < itemCount )
+      // todo: correct the invalid item split? does retail do this or does it just ignore it?
+      return;
+
+   // make sure toInventoryId & toSlot are actually free so we don't orphan an item
+   if( m_inventoryMap[toInventoryId]->getItem( toSlot ) )
+      // todo: correct invalid move? again, not sure what retail does here
+      return;
+
+   auto newSlot = addItem( toInventoryId, toSlot, fromItem->getId(), itemCount, fromItem->isHq(), true );
+   if( newSlot == -1 )
+      return;
+
+   auto newItem = m_inventoryMap[toInventoryId]->getItem( static_cast< uint8_t >( newSlot ) );
+
+   fromItem->setStackSize( fromItem->getStackSize() - itemCount );
+
+   updateContainer( fromInventoryId, fromSlotId, fromItem );
+   updateContainer( toInventoryId, toSlot, newItem );
+
+   updateItemDb( fromItem );
+}
+
+void Core::Inventory::mergeItem( uint16_t fromInventoryId, uint8_t fromSlotId, uint16_t toInventoryId, uint8_t toSlot )
+{
+   auto fromItem = m_inventoryMap[fromInventoryId]->getItem( fromSlotId );
+   auto toItem = m_inventoryMap[toInventoryId]->getItem( toSlot );
+
+   if( !fromItem || !toItem )
+      return;
+
+   if( fromItem->getId() != toItem->getId() )
+      return;
+
+   uint32_t stackSize = fromItem->getStackSize() + toItem->getStackSize();
+   uint32_t stackOverflow = stackSize - std::min< uint32_t >( m_maxSlotSize, stackSize );
+
+   // we can destroy the original stack if there's no overflow
+   if( stackOverflow == 0 )
+   {
+      m_inventoryMap[fromInventoryId]->removeItem( fromSlotId );
+      deleteItemDb( fromItem );
+   }
+   else
+   {
+      fromItem->setStackSize( stackOverflow );
+      updateItemDb( fromItem );
+   }
+
+
+   toItem->setStackSize( stackSize );
+   updateItemDb( toItem );
+
+   updateContainer( fromInventoryId, fromSlotId, fromItem );
+   updateContainer( toInventoryId, toSlot, toItem );
+}
+
 void Core::Inventory::swapItem( uint16_t fromInventoryId, uint8_t fromSlotId, uint16_t toInventoryId, uint8_t toSlot )
 {
    auto fromItem = m_inventoryMap[fromInventoryId]->getItem( fromSlotId );
@@ -611,7 +687,7 @@ void Core::Inventory::swapItem( uint16_t fromInventoryId, uint8_t fromSlotId, ui
 
    // An item is being moved from bag0-3 to equippment, meaning
    // the swapped out item will be placed in the matching armory.
-   if( isEquipment( toInventoryId ) 
+   if( isEquipment( toInventoryId )
        && !isEquipment( fromInventoryId )
        && !isArmory( fromInventoryId ) )
    {
@@ -633,23 +709,25 @@ void Core::Inventory::discardItem( uint16_t fromInventoryId, uint8_t fromSlotId 
    uint32_t transactionId = 1;
 
    auto fromItem = m_inventoryMap[fromInventoryId]->getItem( fromSlotId );
+   
+   deleteItemDb( fromItem );
 
    m_inventoryMap[fromInventoryId]->removeItem( fromSlotId );
    updateContainer( fromInventoryId, fromSlotId, nullptr );
 
-   ZoneChannelPacket< FFXIVIpcInventoryTransaction > invTransPacket( m_pOwner->getId() );
-   invTransPacket.data().transactionId = transactionId;
-   invTransPacket.data().ownerId = m_pOwner->getId();
-   invTransPacket.data().storageId = fromInventoryId;
-   invTransPacket.data().catalogId = fromItem->getId();
-   invTransPacket.data().stackSize = fromItem->getStackSize();
-   invTransPacket.data().slotId = fromSlotId;
-   invTransPacket.data().type = 7;
+   auto invTransPacket = makeZonePacket< FFXIVIpcInventoryTransaction >( m_pOwner->getId() );
+   invTransPacket->data().transactionId = transactionId;
+   invTransPacket->data().ownerId = m_pOwner->getId();
+   invTransPacket->data().storageId = fromInventoryId;
+   invTransPacket->data().catalogId = fromItem->getId();
+   invTransPacket->data().stackSize = fromItem->getStackSize();
+   invTransPacket->data().slotId = fromSlotId;
+   invTransPacket->data().type = 7;
    m_pOwner->queuePacket( invTransPacket );
 
-   ZoneChannelPacket< FFXIVIpcInventoryTransactionFinish > invTransFinPacket( m_pOwner->getId() );
-   invTransFinPacket.data().transactionId = transactionId;
-   invTransFinPacket.data().transactionId1 = transactionId;
+   auto invTransFinPacket = makeZonePacket< FFXIVIpcInventoryTransactionFinish >( m_pOwner->getId() );
+   invTransFinPacket->data().transactionId = transactionId;
+   invTransFinPacket->data().transactionId1 = transactionId;
    m_pOwner->queuePacket( invTransFinPacket );
 }
 
@@ -657,7 +735,7 @@ Core::ItemPtr Core::Inventory::loadItem( uint64_t uId )
 {
    auto pExdData = g_fw.get< Data::ExdDataGenerated >();
    auto pDb = g_fw.get< Db::DbWorkerPool< Db::CharaDbConnection > >();
-   // load actual item 
+   // load actual item
    auto itemRes = pDb->query( "SELECT catalogId, stack, flags FROM charaglobalitem WHERE itemId = " + std::to_string( uId ) + ";" );
    if( !itemRes->next() )
       return nullptr;
@@ -665,13 +743,14 @@ Core::ItemPtr Core::Inventory::loadItem( uint64_t uId )
    try
    {
       auto itemInfo = pExdData->get< Core::Data::Item >( itemRes->getUInt( 1 ) );
-      bool isHq = itemRes->getUInt( 3 ) == 1 ? true : false;
-      ItemPtr pItem( new Item( uId, 
+      bool isHq = itemRes->getUInt( 3 ) == 1;
+
+      ItemPtr pItem = make_Item( uId,
                                itemRes->getUInt( 1 ),
                                itemInfo->modelMain,
-                               itemInfo->modelSub, 
-                               static_cast< ItemUICategory >( itemInfo->itemUICategory ),
-                               isHq ) );
+                               itemInfo->modelSub,
+                               isHq );
+
       pItem->setStackSize( itemRes->getUInt( 2 ) );
 
       return pItem;
@@ -828,34 +907,34 @@ void Core::Inventory::send()
 
          if( it->second->getId() == InventoryType::Currency || it->second->getId() == InventoryType::Crystal )
          {
-            ZoneChannelPacket< FFXIVIpcCurrencyCrystalInfo > currencyInfoPacket( m_pOwner->getId() );
-            currencyInfoPacket.data().sequence = count;
-            currencyInfoPacket.data().catalogId = itM->second->getId();
-            currencyInfoPacket.data().unknown = 1;
-            currencyInfoPacket.data().quantity = itM->second->getStackSize();
-            currencyInfoPacket.data().containerId = it->second->getId();
-            currencyInfoPacket.data().slot = 0;
+            auto currencyInfoPacket = makeZonePacket< FFXIVIpcCurrencyCrystalInfo >( m_pOwner->getId() );
+            currencyInfoPacket->data().sequence = count;
+            currencyInfoPacket->data().catalogId = itM->second->getId();
+            currencyInfoPacket->data().unknown = 1;
+            currencyInfoPacket->data().quantity = itM->second->getStackSize();
+            currencyInfoPacket->data().containerId = it->second->getId();
+            currencyInfoPacket->data().slot = 0;
             m_pOwner->queuePacket( currencyInfoPacket );
          }
          else
          {
-            ZoneChannelPacket< FFXIVIpcItemInfo > itemInfoPacket( m_pOwner->getId() );
-            itemInfoPacket.data().sequence = count;
-            itemInfoPacket.data().containerId = it->second->getId();
-            itemInfoPacket.data().slot = itM->first;
-            itemInfoPacket.data().quantity = itM->second->getStackSize();
-            itemInfoPacket.data().catalogId = itM->second->getId();
-            itemInfoPacket.data().condition = 30000;
-            itemInfoPacket.data().spiritBond = 0;
-            itemInfoPacket.data().hqFlag = itM->second->isHq() ? 1 : 0;
+            auto itemInfoPacket = makeZonePacket< FFXIVIpcItemInfo >( m_pOwner->getId() );
+            itemInfoPacket->data().sequence = count;
+            itemInfoPacket->data().containerId = it->second->getId();
+            itemInfoPacket->data().slot = itM->first;
+            itemInfoPacket->data().quantity = itM->second->getStackSize();
+            itemInfoPacket->data().catalogId = itM->second->getId();
+            itemInfoPacket->data().condition = 30000;
+            itemInfoPacket->data().spiritBond = 0;
+            itemInfoPacket->data().hqFlag = itM->second->isHq() ? 1 : 0;
             m_pOwner->queuePacket( itemInfoPacket );
          }
       }
 
-      ZoneChannelPacket< FFXIVIpcContainerInfo > containerInfoPacket( m_pOwner->getId() );
-      containerInfoPacket.data().sequence = count;
-      containerInfoPacket.data().numItems = it->second->getEntryCount();
-      containerInfoPacket.data().containerId = it->second->getId();
+      auto containerInfoPacket = makeZonePacket< FFXIVIpcContainerInfo >( m_pOwner->getId() );
+      containerInfoPacket->data().sequence = count;
+      containerInfoPacket->data().numItems = it->second->getEntryCount();
+      containerInfoPacket->data().containerId = it->second->getId();
       m_pOwner->queuePacket( containerInfoPacket );
 
 
@@ -871,23 +950,18 @@ uint16_t Core::Inventory::calculateEquippedGearItemLevel()
 
    auto it = gearSetMap.begin();
 
-   while ( it != gearSetMap.end() )
+   while( it != gearSetMap.end() )
    {
       auto currItem = it->second;
 
-      if ( currItem )
+      if( currItem )
       {
          iLvlResult += currItem->getItemLevel();
 
          // If item is weapon and isn't one-handed
-         if ( currItem->isWeapon() && !isOneHandedWeapon( currItem->getCategory() ) )
+         if( currItem->isWeapon() && !isOneHandedWeapon( currItem->getCategory() ) )
          {
             iLvlResult += currItem->getItemLevel();
-         }
-         else
-         {
-            auto pLog = g_fw.get< Logger >();
-            pLog->debug( "Is one handed" );
          }
       }
 
